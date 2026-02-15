@@ -26,3 +26,6 @@ A book review website created using Flask, Python, and SQL. The user will be abl
 #### py files:
 - application.py: runs the website
 - import.py: separate program to import the books csv into postgresql
+
+
+**Screencast link:** https://youtu.be/qwuWExM36Pc
