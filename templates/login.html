@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login Page</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+
+<body>
+    <nav class="nav-top">
+        <a href="{{ url_for('index') }}"><button class="exit-btn">Exit</button></a>
+    </nav>
+    <div class="hero-container">
+        <h1>Login to Your Account</h1>
+        <div class="login-container">
+            <form method="POST" action="{{ url_for('login') }}">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
+
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+
+                <button class="login-btn" type="submit">Login</button>
+            </form>
+
+            <p>
+                Don't have an account? 
+                <a class="signup-link" href="{{ url_for('signup') }}">Sign up here!</a>
+            </p>
+
+            {% if message %}
+            <p class="message {% if color == 'green' %}success{% else %}error{% endif %}">
+                {{ message }}
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

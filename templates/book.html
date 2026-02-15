@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ book.title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        
+    </style>
+</head>
+<body>
+    
+    <nav class="nav-top">
+        <a href="{{ url_for('search') }}"><button class="exit-btn">Back to Search</button></a>
+        <a href="{{ url_for('logout') }}"><button class="exit-btn">Logout</button></a>
+    </nav>
+
+    <div class="book-container">
+        <!-- Stock image -->
+        <img src="{{ url_for('static', filename='placeholder-book.jpg') }}" alt="Book Cover" class="book-image">
+        
+        <!-- Book info -->
+        <div class="book-info">
+            <h1>{{ book.title }}</h1>
+            <p><strong>Author:</strong> {{ book.author }}</p>
+            <p><strong>Year:</strong> {{ book.year }}</p>
+            <p><strong>ISBN:</strong> {{ book.isbn }}</p>
+            {% if book.description %}
+                <p><strong>Description:</strong> {{ book.description }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+</body>
+</html>

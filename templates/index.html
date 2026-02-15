@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Book Review Website</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+
+<body>
+    <div class="hero-container">
+        <h1>Read a book? Let's review it!</h1>
+        <div class="auth-container">
+            <a href="{{ url_for('login') }}">
+                <button class="login-btn">Login</button>
+            </a>
+            <a class="signup-link" href="{{ url_for('signup') }}">Sign up here!</a> 
+
+            
+        </div>
+    </div>
+</body>
+</html>
