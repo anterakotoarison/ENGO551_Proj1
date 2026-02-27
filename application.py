@@ -29,6 +29,17 @@ CREATE TABLE IF NOT EXISTS users (
     password TEXT NOT NULL
 )
 """))
+
+db.execute(text("""CREATE TABLE IF NOT EXISTS reviews (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    isbn CHAR(13) REFERENCES book_table(isbn),
+    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+    review_text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, isbn) -- One review per user, per book
+)"""))
+
 db.commit()
 
 
@@ -119,8 +130,9 @@ def logout():
     session.clear()   # removes user_id and everything in session
     return redirect(url_for("index"))  # go back to home page
 
-@app.route("/book/<isbn>")
+@app.route("/book/<isbn>", methods=["GET", "POST"])
 def book_page(isbn):
+    isbn = isbn.strip()
     if "user_id" not in session:
         return redirect(url_for("index"))
 
@@ -131,6 +143,36 @@ def book_page(isbn):
 
     if not book:
         return "Book not found!", 404
+    
+    # reviews
+    if request.method == "POST":
+        rating = request.form.get("rating")
+        review_text = request.form.get("review_text")
+        
+        exists = db.execute(text("SELECT id FROM reviews WHERE user_id = :u AND isbn = :i"),
+                           {"u": session["user_id"], "i": isbn}).fetchone()
+        if not exists:
+            db.execute(text("INSERT INTO reviews (user_id, isbn, rating, review_text) VALUES (:u, :i, :r, :t)"),
+                       {"u": session["user_id"], "i": isbn, "r": rating, "t": review_text})
+            db.commit()
+        return redirect(url_for('book_page', isbn=isbn))
+    
+    all_reviews = db.execute(text("""
+        SELECT u.username, r.rating, r.review_text, r.created_at 
+        FROM reviews r JOIN users u ON r.user_id = u.id 
+        WHERE r.isbn = :i ORDER BY r.created_at DESC"""), {"i": isbn}).fetchall()
+    
+    # Check if the logged-in user has already reviewed
+    user_review = db.execute(text("SELECT id FROM reviews WHERE user_id = :u AND isbn = :i"),
+                            {"u": session["user_id"], "i": isbn}).fetchone()
+    
+    # Get internal stats (average of YOUR users' ratings)
+    stats = db.execute(text("SELECT COUNT(id) as count, ROUND(AVG(rating), 1) as average FROM reviews WHERE isbn = :i"),
+                      {"i": isbn}).fetchone()
 
-    return render_template("book.html", book=book)
+    return render_template("book.html", 
+                           book=book,
+                           reviews=all_reviews, 
+                           has_reviewed=bool(user_review), 
+                           stats=stats)
 

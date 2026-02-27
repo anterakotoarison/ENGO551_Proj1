@@ -3,9 +3,6 @@
 <head>
     <title>{{ book.title }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <style>
-        
-    </style>
 </head>
 <body>
     
@@ -29,6 +26,58 @@
             {% endif %}
         </div>
     </div>
+
+    <div class="reviews-section">
+        <hr>
+        <h2>Your Website's Reviews</h2>
+
+        <div class="stats">
+            {% if stats and stats.count > 0 %}
+                <p><strong>Internal Average:</strong> {{ stats.average }} / 5 ({{ stats.count }} local reviews)</p>
+            {% else %}
+                <p><em>No local reviews yet. Be the first!</em></p>
+            {% endif %}
+        </div>
+
+        {% if not has_reviewed %}
+        <div class="review-form">
+            <h3>Leave a Review</h3>
+            <form action="{{ url_for('book_page', isbn=book.isbn.strip()) }}" method="POST">
+                <div class="form-group">
+                    <label for="rating">Rating:</label>
+                    <select name="rating" id="rating" required>
+                        <option value="5">5 - Excellent</option>
+                        <option value="4">4 - Very Good</option>
+                        <option value="3">3 - Average</option>
+                        <option value="2">2 - Poor</option>
+                        <option value="1">1 - Terrible</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <textarea name="review_text" rows="4" placeholder="What did you think of this book?" required></textarea>
+                </div>
+                <button type="submit" class="submit-btn">Post Review</button>
+            </form> 
+        </div>
+    
+        {% else %}
+            <p class="status-msg" style="color: green; font-weight: bold;">✓ You have already reviewed this book.</p>
+        {% endif %}
+
+        <div class="reviews-list">
+            {% for review in reviews %}
+                <div class="review-card">
+                    <div class="review-header">
+                        <strong>{{ review.username }}</strong> 
+                        <span class="rating-badge">{{ review.rating }}/5 Stars</span>
+                    </div>
+                    <p class="review-text">{{ review.review_text }}</p>
+                    <small class="review-date">Posted on {{ review.created_at.strftime('%B %d, %Y') }}</small>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
 
 </body>
 </html>
