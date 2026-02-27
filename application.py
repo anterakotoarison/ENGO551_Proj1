@@ -5,6 +5,7 @@ from flask_session import Session
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import scoped_session, sessionmaker
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
 app = Flask(__name__)
