@@ -29,7 +29,7 @@
             <ul>
                 {% for book in results %}
                     <li>
-                        <a href="{{ url_for('book_page', isbn=book.isbn) }}">
+                        <a href="{{ url_for('book_page', isbn=book.isbn.strip()) }}">
                             <strong>{{ book.title }}</strong>
                         </a><br>
                         Author: {{ book.author }}<br>

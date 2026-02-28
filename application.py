@@ -6,6 +6,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import scoped_session, sessionmaker
 from dotenv import load_dotenv
 import requests
+from google import genai
+
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 load_dotenv()
 app = Flask(__name__)
@@ -133,47 +136,110 @@ def logout():
 
 @app.route("/book/<isbn>", methods=["GET", "POST"])
 def book_page(isbn):
+    # 1. Clean the ISBN from the URL
     isbn = isbn.strip()
+    
     if "user_id" not in session:
         return redirect(url_for("index"))
 
+    # 2. Fetch book from local DB (using TRIM to ignore database padding)
     book = db.execute(
-        text("SELECT * FROM book_table WHERE isbn = :isbn"),
+        text("SELECT * FROM book_table WHERE TRIM(isbn) = :isbn"),
         {"isbn": isbn}
     ).fetchone()
 
     if not book:
         return "Book not found!", 404
+
+    # 3. Fetch Google Books Data
+    google_data = None
+    try:
+        clean_isbn = isbn.strip().replace("-", "")
+        
+        # We use your new key here to bypass the 429 error
+        params = {
+            "q": f"isbn:{clean_isbn}",
+            "key": os.getenv("GOOGLE_BOOKS_KEY") # Ensure this matches your .env name
+        }
+        
+        res = requests.get("https://www.googleapis.com/books/v1/volumes", params=params, timeout=5)
+        
+        if res.status_code == 200:
+            data = res.json()
+            
+            # If ISBN search is empty, try a broader search with the key
+            if data.get("totalItems", 0) == 0:
+                params["q"] = f"{book.title} {book.author}"
+                res = requests.get("https://www.googleapis.com/books/v1/volumes", params=params, timeout=5)
+                data = res.json()
+
+            if "items" in data:
+                google_data = data["items"][0].get("volumeInfo")
+                
+                # Force HTTPS for thumbnails
+                if google_data and "imageLinks" in google_data:
+                    img_url = google_data["imageLinks"].get("thumbnail")
+                    if img_url:
+                        google_data["imageLinks"]["thumbnail"] = img_url.replace("http://", "https://")
+                
+                print(f"DEBUG: SUCCESS! Found data for {book.title}")
+            else:
+                print(f"DEBUG: Even with a key, Google found nothing for {book.title}")
+        else:
+            print(f"DEBUG: API Error {res.status_code}: {res.text}")
+
+    except Exception as e:
+        print(f"API Error: {e}")
     
-    # reviews
+    ai_summary = None
+    try:
+        # Create a detailed prompt based on the book info you already have
+        prompt = f"Provide a concise, 3-sentence summary of the book '{book.title}' by {book.author}. Focus on the main plot and themes."
+        
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt
+        )
+        ai_summary = response.text
+    except Exception as e:
+        print(f"Gemini API Error: {e}")
+        ai_summary = "AI summary temporarily unavailable."
+
+    # 4. Handle Review Submission (POST)
     if request.method == "POST":
         rating = request.form.get("rating")
         review_text = request.form.get("review_text")
         
-        exists = db.execute(text("SELECT id FROM reviews WHERE user_id = :u AND isbn = :i"),
+        # Check if user already reviewed this book
+        exists = db.execute(text("SELECT id FROM reviews WHERE user_id = :u AND TRIM(isbn) = :i"),
                            {"u": session["user_id"], "i": isbn}).fetchone()
+        
         if not exists:
             db.execute(text("INSERT INTO reviews (user_id, isbn, rating, review_text) VALUES (:u, :i, :r, :t)"),
                        {"u": session["user_id"], "i": isbn, "r": rating, "t": review_text})
             db.commit()
+        
+        # Redirect back to the GET route to prevent form resubmission on refresh
         return redirect(url_for('book_page', isbn=isbn))
     
+    # 5. Fetch all reviews for this book
     all_reviews = db.execute(text("""
         SELECT u.username, r.rating, r.review_text, r.created_at 
         FROM reviews r JOIN users u ON r.user_id = u.id 
-        WHERE r.isbn = :i ORDER BY r.created_at DESC"""), {"i": isbn}).fetchall()
+        WHERE TRIM(r.isbn) = :i ORDER BY r.created_at DESC"""), {"i": isbn}).fetchall()
     
-    # Check if the logged-in user has already reviewed
-    user_review = db.execute(text("SELECT id FROM reviews WHERE user_id = :u AND isbn = :i"),
+    # 6. Check if CURRENT user has reviewed (for the template logic)
+    user_review = db.execute(text("SELECT id FROM reviews WHERE user_id = :u AND TRIM(isbn) = :i"),
                             {"u": session["user_id"], "i": isbn}).fetchone()
     
-    # Get internal stats (average of YOUR users' ratings)
-    stats = db.execute(text("SELECT COUNT(id) as count, ROUND(AVG(rating), 1) as average FROM reviews WHERE isbn = :i"),
+    # 7. Calculate internal website stats
+    stats = db.execute(text("SELECT COUNT(id) as count, ROUND(AVG(rating), 1) as average FROM reviews WHERE TRIM(isbn) = :i"),
                       {"i": isbn}).fetchone()
 
     return render_template("book.html", 
                            book=book,
                            reviews=all_reviews, 
                            has_reviewed=bool(user_review), 
-                           stats=stats)
-
+                           stats=stats,
+                           google_data=google_data,
+                           ai_summary=ai_summary)
