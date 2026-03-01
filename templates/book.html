@@ -33,16 +33,15 @@
                 View API Data (JSON)
             </button>
 
-            <div id="jsonModal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.8); align-items:center; justify-content:center;">
-                <div style="background:white; padding:20px; border-radius:10px; width:80%; max-height:80%; overflow:auto; position:relative;">
-                    <span onclick="closeModal()" style="position:absolute; right:20px; top:10px; cursor:pointer; font-size:28px;">&times;</span>
-                    <h3>Official API Response</h3>
-                    <pre id="jsonDisplay" style="background:#272822; color:#f8f8f2; padding:15px; border-radius:5px; text-align:left;"></pre>
+            <div id="jsonPopup">
+                <div class="modal-content">
+                    <span class="close-button" onclick="closeModal()">&times;</span>
+                    <h3>API Json</h3>
+                    <pre id="jsonDisplay"></pre>
                 </div>
             </div>
         </div>
         
-        <!-- Book info -->
         <div class="book-info">
             <h1>{{ book.title }}</h1>
             <p><strong>Author:</strong> {{ book.author }}</p>
@@ -115,13 +114,10 @@
 
     <script>
     function openJsonPopup(isbn) {
-        // 1. Fetch data from YOUR /api/<isbn> route
         fetch(`/api/${isbn}`)
             .then(response => response.json())
             .then(data => {
-                // 2. Format the JSON with 4-space indentation
                 const formattedJson = JSON.stringify(data, null, 4);
-                // 3. Put it in the <pre> tag and show the modal
                 document.getElementById('jsonDisplay').textContent = formattedJson;
                 document.getElementById('jsonModal').style.display = 'flex';
             })
