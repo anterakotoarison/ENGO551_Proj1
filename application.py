@@ -8,9 +8,8 @@ from dotenv import load_dotenv
 import requests
 from google import genai
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
 load_dotenv()
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 app = Flask(__name__)
 
 # Check for environment variable
@@ -45,7 +44,6 @@ db.execute(text("""CREATE TABLE IF NOT EXISTS reviews (
 )"""))
 
 db.commit()
-
 
 @app.route("/")
 def index():
@@ -177,13 +175,21 @@ def book_api(isbn):
     # 4. Generate AI Summary via Gemini
     summarized_desc = None
     try:
+        # Match the model name that worked in your book_page
+        model_to_use = "gemini-3-flash-preview" 
+        
         prompt = f"Summarize the book '{book.title}' by {book.author} in 2-3 concise sentences."
         response = client.models.generate_content(
-            model="gemini-2.0-flash", 
+            model=model_to_use, 
             contents=prompt
         )
+        
+        # Use .text to get the string
         summarized_desc = response.text.strip()
-    except:
+        
+    except Exception as e:
+        # THIS IS KEY: It will tell you why it's null in your terminal
+        print(f"DEBUG: API Route Gemini Error: {e}")
         summarized_desc = None
 
     # 5. Return the JSON exactly as required
@@ -191,8 +197,7 @@ def book_api(isbn):
         "title": book.title,
         "author": book.author,
         "publishedDate": pub_date,
-        "ISBN_10": isbn_10,
-        "ISBN_13": isbn_13,
+        "ISBN": isbn_13,
         "reviewCount": int(stats.count) if stats.count else 0,
         "averageRating": float(round(stats.average, 1)) if stats.average else None,
         "description": google_desc,
