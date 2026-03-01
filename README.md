@@ -27,5 +27,19 @@ A book review website created using Flask, Python, and SQL. The user will be abl
 - application.py: runs the website
 - import.py: separate program to import the books csv into postgresql
 
+## New Features from Lab 2
+- Review feature:
+    - user is able to write **ONE** review for each book
+    - a display of all reviews written is shown on the book page
+    - the average rating and the number of "local" reviews are shown
+- Google Book API:
+    - use google books to get cover image
+    - use google books to get review info and other extra ones 
+- Gemini API
+    - use gemini to generate summary of book
 
-**Screencast link:** https://youtu.be/qwuWExM36Pc
+
+#### Screencast link
+**Lab 1** https://youtu.be/qwuWExM36Pc
+**Lab 2** https://youtu.be/V26OpqsWmwE
+
