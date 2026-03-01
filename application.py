@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, session, render_template, request, redirect, url_for
+from flask import Flask, session, render_template, request, redirect, url_for, jsonify
 from flask_session import Session
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import scoped_session, sessionmaker
@@ -133,6 +133,71 @@ def search():
 def logout():
     session.clear()   # removes user_id and everything in session
     return redirect(url_for("index"))  # go back to home page
+
+@app.route("/api/<isbn>", methods=["GET"])
+def book_api(isbn):
+    # 1. Look for the book in your database
+    isbn_clean = isbn.strip()
+    book = db.execute(
+        text("SELECT * FROM book_table WHERE TRIM(isbn) = :isbn"),
+        {"isbn": isbn_clean}
+    ).fetchone()
+
+    if not book:
+        return jsonify({"error": "ISBN not found in database"}), 404
+
+    # 2. Get review stats from your database
+    stats = db.execute(text("""
+        SELECT COUNT(id) as count, AVG(rating) as average 
+        FROM reviews WHERE TRIM(isbn) = :i
+    """), {"i": isbn_clean}).fetchone()
+
+    # 3. Fetch extra data from Google Books (Description, Date, ISBN-10)
+    google_desc = None
+    pub_date = None
+    isbn_10 = None
+    isbn_13 = isbn_clean # Default to the one provided
+    
+    try:
+        res = requests.get(f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn_clean}")
+        if res.status_code == 200:
+            data = res.json()
+            if "items" in data:
+                info = data["items"][0]["volumeInfo"]
+                google_desc = info.get("description")
+                pub_date = info.get("publishedDate")
+                for identifier in info.get("industryIdentifiers", []):
+                    if identifier["type"] == "ISBN_10":
+                        isbn_10 = identifier["identifier"]
+                    if identifier["type"] == "ISBN_13":
+                        isbn_13 = identifier["identifier"]
+    except:
+        pass
+
+    # 4. Generate AI Summary via Gemini
+    summarized_desc = None
+    try:
+        prompt = f"Summarize the book '{book.title}' by {book.author} in 2-3 concise sentences."
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt
+        )
+        summarized_desc = response.text.strip()
+    except:
+        summarized_desc = None
+
+    # 5. Return the JSON exactly as required
+    return jsonify({
+        "title": book.title,
+        "author": book.author,
+        "publishedDate": pub_date,
+        "ISBN_10": isbn_10,
+        "ISBN_13": isbn_13,
+        "reviewCount": int(stats.count) if stats.count else 0,
+        "averageRating": float(round(stats.average, 1)) if stats.average else None,
+        "description": google_desc,
+        "summarizedDescription": summarized_desc
+    })
 
 @app.route("/book/<isbn>", methods=["GET", "POST"])
 def book_page(isbn):
