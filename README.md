@@ -41,5 +41,6 @@ A book review website created using Flask, Python, and SQL. The user will be abl
 
 #### Screencast link
 **Lab 1** https://youtu.be/qwuWExM36Pc
+
 **Lab 2** https://youtu.be/V26OpqsWmwE
 
