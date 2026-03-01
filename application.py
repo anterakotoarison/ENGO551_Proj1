@@ -12,7 +12,7 @@ load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 app = Flask(__name__)
 
-# Check for environment variable
+# Check for environment variable for psql
 if not os.getenv("DATABASE_URL"):
     raise RuntimeError("DATABASE_URL is not set")
 
@@ -25,6 +25,7 @@ Session(app)
 engine = create_engine(os.getenv("DATABASE_URL"))
 db = scoped_session(sessionmaker(bind=engine))
 
+# Creating user and book tables
 db.execute(text("""
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
@@ -45,16 +46,19 @@ db.execute(text("""CREATE TABLE IF NOT EXISTS reviews (
 
 db.commit()
 
+# Opening homepage
 @app.route("/")
 def index():
     return render_template("index.html")
 
+# Signup route -- signup form page
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
         username = request.form['username']
         password = request.form['password']
 
+        # check if created username already exists in the database
         existing_user = db.execute(
             text("SELECT * FROM users WHERE username = :username"),
             {"username": username}
@@ -76,6 +80,7 @@ def signup():
                 {"username": username}
             ).fetchone()
 
+            # create session with user
             session['user_id'] = user.id
 
             return redirect(url_for("search"))
@@ -83,7 +88,7 @@ def signup():
     return render_template("signup.html")
 
 
-# Login route
+# Login route -- login form page
 @app.route("/login", methods=["GET", "POST"])
 def login():
     message = None
@@ -106,14 +111,17 @@ def login():
 
     return render_template("login.html", message=message, color=color)
 
+# Search route -- search page
 @app.route("/search", methods=["GET", "POST"])
 def search():
+    # user has to be logged in to search
     if "user_id" not in session:
         return redirect(url_for("login"))
 
     results = []
     searched = False
 
+    # query for the book based on isbn, partial titles and author
     if request.method == "POST":
         searched = True
         search_query = request.form.get("query")
@@ -126,15 +134,17 @@ def search():
 
     return render_template("search.html", results=results, searched=searched)
 
-
+# Log out route -- logs user out
 @app.route("/logout")
 def logout():
     session.clear()   # removes user_id and everything in session
     return redirect(url_for("index"))  # go back to home page
 
+# GET API Json
 @app.route("/api/<isbn>", methods=["GET"])
 def book_api(isbn):
-    # 1. Look for the book in your database
+
+    # query for book using isb
     isbn_clean = isbn.strip()
     book = db.execute(
         text("SELECT * FROM book_table WHERE TRIM(isbn) = :isbn"),
@@ -144,18 +154,19 @@ def book_api(isbn):
     if not book:
         return jsonify({"error": "ISBN not found in database"}), 404
 
-    # 2. Get review stats from your database
+    # query for reviews from database
     stats = db.execute(text("""
         SELECT COUNT(id) as count, AVG(rating) as average 
         FROM reviews WHERE TRIM(isbn) = :i
     """), {"i": isbn_clean}).fetchone()
 
-    # 3. Fetch extra data from Google Books (Description, Date, ISBN-10)
+    # init vars for google books api info
     google_desc = None
     pub_date = None
     isbn_10 = None
     isbn_13 = isbn_clean # Default to the one provided
     
+    # get extra info from google books api
     try:
         res = requests.get(f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn_clean}")
         if res.status_code == 200:
@@ -171,14 +182,13 @@ def book_api(isbn):
                         isbn_13 = identifier["identifier"]
     except:
         pass
-
-    # 4. Generate AI Summary via Gemini
+    
+    # get ai for summarized description
     summarized_desc = None
     try:
-        # Match the model name that worked in your book_page
         model_to_use = "gemini-3-flash-preview" 
         
-        prompt = f"Summarize the book '{book.title}' by {book.author} in 2-3 concise sentences."
+        prompt = f"Summarize the book '{book.title}' by {book.author} in 2-3 short sentences."
         response = client.models.generate_content(
             model=model_to_use, 
             contents=prompt
@@ -188,8 +198,7 @@ def book_api(isbn):
         summarized_desc = response.text.strip()
         
     except Exception as e:
-        # THIS IS KEY: It will tell you why it's null in your terminal
-        print(f"DEBUG: API Route Gemini Error: {e}")
+        print(f"Gemini API error: {e}")
         summarized_desc = None
 
     # 5. Return the JSON exactly as required
@@ -197,7 +206,8 @@ def book_api(isbn):
         "title": book.title,
         "author": book.author,
         "publishedDate": pub_date,
-        "ISBN": isbn_13,
+        "ISBN_10": isbn_10,
+        "ISBN_13": isbn_13,
         "reviewCount": int(stats.count) if stats.count else 0,
         "averageRating": float(round(stats.average, 1)) if stats.average else None,
         "description": google_desc,
@@ -206,13 +216,14 @@ def book_api(isbn):
 
 @app.route("/book/<isbn>", methods=["GET", "POST"])
 def book_page(isbn):
-    # 1. Clean the ISBN from the URL
+    # use clean isbn
     isbn = isbn.strip()
     
+    # if user not logged in, cannot be in book page
     if "user_id" not in session:
         return redirect(url_for("index"))
 
-    # 2. Fetch book from local DB (using TRIM to ignore database padding)
+    # get book from database
     book = db.execute(
         text("SELECT * FROM book_table WHERE TRIM(isbn) = :isbn"),
         {"isbn": isbn}
@@ -221,50 +232,44 @@ def book_page(isbn):
     if not book:
         return "Book not found!", 404
 
-    # 3. Fetch Google Books Data
+    # get more info from google api
     google_data = None
     try:
-        clean_isbn = isbn.strip().replace("-", "")
+        clean_isbn = isbn.strip().replace("-", "") # keep stripping isbn just in case
         
-        # We use your new key here to bypass the 429 error
         params = {
             "q": f"isbn:{clean_isbn}",
-            "key": os.getenv("GOOGLE_BOOKS_KEY") # Ensure this matches your .env name
+            "key": os.getenv("GOOGLE_BOOKS_KEY") # use api key
         }
         
+        # request api
         res = requests.get("https://www.googleapis.com/books/v1/volumes", params=params, timeout=5)
         
         if res.status_code == 200:
             data = res.json()
-            
-            # If ISBN search is empty, try a broader search with the key
+            # if isbn doesn't work, try title and author
             if data.get("totalItems", 0) == 0:
                 params["q"] = f"{book.title} {book.author}"
                 res = requests.get("https://www.googleapis.com/books/v1/volumes", params=params, timeout=5)
                 data = res.json()
-
+            # get all items
             if "items" in data:
                 google_data = data["items"][0].get("volumeInfo")
                 
-                # Force HTTPS for thumbnails
+                # get thumbnail
                 if google_data and "imageLinks" in google_data:
                     img_url = google_data["imageLinks"].get("thumbnail")
                     if img_url:
                         google_data["imageLinks"]["thumbnail"] = img_url.replace("http://", "https://")
                 
                 print(f"DEBUG: SUCCESS! Found data for {book.title}")
-            else:
-                print(f"DEBUG: Even with a key, Google found nothing for {book.title}")
-        else:
-            print(f"DEBUG: API Error {res.status_code}: {res.text}")
 
     except Exception as e:
         print(f"API Error: {e}")
     
     ai_summary = None
     try:
-        # Create a detailed prompt based on the book info you already have
-        prompt = f"Provide a concise, 3-sentence summary of the book '{book.title}' by {book.author}. Focus on the main plot and themes."
+        prompt = f"Provide a concise, summary of the book '{book.title}' by {book.author} in less than 50 words. Focus on the main plot and themes."
         
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
@@ -275,12 +280,12 @@ def book_page(isbn):
         print(f"Gemini API Error: {e}")
         ai_summary = "AI summary temporarily unavailable."
 
-    # 4. Handle Review Submission (POST)
+    # Reviews stuff
     if request.method == "POST":
         rating = request.form.get("rating")
         review_text = request.form.get("review_text")
         
-        # Check if user already reviewed this book
+        # check if user already reviewed this book
         exists = db.execute(text("SELECT id FROM reviews WHERE user_id = :u AND TRIM(isbn) = :i"),
                            {"u": session["user_id"], "i": isbn}).fetchone()
         
@@ -289,20 +294,18 @@ def book_page(isbn):
                        {"u": session["user_id"], "i": isbn, "r": rating, "t": review_text})
             db.commit()
         
-        # Redirect back to the GET route to prevent form resubmission on refresh
+        
         return redirect(url_for('book_page', isbn=isbn))
     
-    # 5. Fetch all reviews for this book
+    # get all reviews to be displayed
     all_reviews = db.execute(text("""
         SELECT u.username, r.rating, r.review_text, r.created_at 
         FROM reviews r JOIN users u ON r.user_id = u.id 
         WHERE TRIM(r.isbn) = :i ORDER BY r.created_at DESC"""), {"i": isbn}).fetchall()
     
-    # 6. Check if CURRENT user has reviewed (for the template logic)
     user_review = db.execute(text("SELECT id FROM reviews WHERE user_id = :u AND TRIM(isbn) = :i"),
                             {"u": session["user_id"], "i": isbn}).fetchone()
-    
-    # 7. Calculate internal website stats
+    # get stats
     stats = db.execute(text("SELECT COUNT(id) as count, ROUND(AVG(rating), 1) as average FROM reviews WHERE TRIM(isbn) = :i"),
                       {"i": isbn}).fetchone()
 
